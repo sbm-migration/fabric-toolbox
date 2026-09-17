@@ -1,0 +1,30 @@
+# Values shared by every pipeline and stage. Edit once per repository.
+variables:
+  # Azure Resource Manager service connection (workload identity federation).
+  # The identity behind it must be a Contributor (Admin if you unpublish
+  # orphans that were created by someone else) on every target workspace.
+  fabricServiceConnection: sc-fabric-cicd
+
+  # Folder in this repository that the Fabric workspace was exported to
+  # (the "Git folder" chosen when the feature workspace was connected to Git).
+  workspaceDirectory: workspace
+
+  # fabric-cicd parameter file (relative to the repository root).
+  parameterFile: config/parameter.yml
+
+  # Environment keys used in parameter.yml. Must match fabricEnvironment in
+  # each per-environment variable file, in promotion order.
+  fabricEnvironments: DEV,TEST,PROD
+
+  # Item types validated in CI. The CD pipeline exposes this as a run parameter.
+  itemTypesInScope: Notebook,DataPipeline,Environment,Lakehouse,Warehouse,SemanticModel,Report,VariableLibrary
+
+  # Optional fabric-cicd feature flags, comma separated (for example
+  # enable_shortcut_publish). Leave empty for defaults.
+  fabricFeatureFlags: ''
+
+  # Optional regex of item names to keep in the workspace even if they are not
+  # in the repository (for example items managed by another team).
+  orphanExcludeRegex: ''
+
+  pythonVersion: '3.12'

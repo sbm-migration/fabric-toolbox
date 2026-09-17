@@ -1,0 +1,139 @@
+# =============================================================================
+# Reusable deployment stage
+# -----------------------------------------------------------------------------
+# One stage = one Fabric workspace. The stage:
+#   1. Downloads the artifact produced by the Build stage (never re-checks out
+#      the repository, so every environment receives identical content).
+#   2. Publishes the workspace definition with fabric-cicd inside an AzureCLI@2
+#      task. The task logs in with the service connection (workload identity
+#      federation) and the script picks the token up through AzureCliCredential.
+#   3. Optionally runs a post-deployment notebook in the target workspace.
+#
+# Compile-time inputs (environment name, stage name, dependsOn) are parameters.
+# Runtime inputs (workspace name, fabric-cicd environment key) come from the
+# per-environment variable template.
+# =============================================================================
+parameters:
+  - name: stageName
+    type: string
+  - name: displayName
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+  - name: condition
+    type: string
+    default: succeeded()
+  - name: adoEnvironment
+    type: string
+  - name: variableTemplate
+    type: string
+  - name: artifactName
+    type: string
+    default: fabric-workspace
+  - name: itemTypesInScope
+    type: string
+  - name: unpublishOrphans
+    type: boolean
+    default: true
+  - name: runPostDeployNotebook
+    type: boolean
+    default: true
+  - name: pythonVersion
+    type: string
+    default: '3.12'
+
+stages:
+  - stage: ${{ parameters.stageName }}
+    displayName: ${{ parameters.displayName }}
+    dependsOn: ${{ parameters.dependsOn }}
+    condition: ${{ parameters.condition }}
+    variables:
+      - template: ../variables/common.yml
+      - template: ../${{ parameters.variableTemplate }}
+      - name: artifactRoot
+        value: $(Pipeline.Workspace)/${{ parameters.artifactName }}
+    jobs:
+      - deployment: deploy
+        displayName: Publish to ${{ parameters.adoEnvironment }}
+        environment: ${{ parameters.adoEnvironment }}
+        timeoutInMinutes: 120
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: ${{ parameters.artifactName }}
+                  displayName: Download workspace artifact
+
+                - task: Bash@3
+                  displayName: Show what is being deployed
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      echo "Artifact root : $(artifactRoot)"
+                      echo "Target        : $(fabricWorkspaceName) (environment key: $(fabricEnvironment))"
+                      echo "Item types    : ${{ parameters.itemTypesInScope }}"
+                      echo "Build info    :"
+                      cat "$(artifactRoot)/build-info.json"
+
+                - template: steps-setup-python.yml
+                  parameters:
+                    pythonVersion: ${{ parameters.pythonVersion }}
+                    requirementsFile: scripts/requirements.txt
+                    workingDirectory: $(artifactRoot)
+
+                - task: AzureCLI@2
+                  displayName: Deploy with fabric-cicd
+                  name: fabricDeploy
+                  inputs:
+                    azureSubscription: $(fabricServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    workingDirectory: $(artifactRoot)
+                    failOnStandardError: false
+                    inlineScript: |
+                      set -euo pipefail
+                      EXTRA_ARGS=()
+                      if [ "${{ parameters.unpublishOrphans }}" = "True" ]; then
+                        EXTRA_ARGS+=(--unpublish-orphans)
+                      fi
+                      if [ -n "$(fabricWorkspaceId)" ]; then
+                        EXTRA_ARGS+=(--workspace-id "$(fabricWorkspaceId)")
+                      else
+                        EXTRA_ARGS+=(--workspace-name "$(fabricWorkspaceName)")
+                      fi
+                      if [ -n "$(orphanExcludeRegex)" ]; then
+                        EXTRA_ARGS+=(--orphan-exclude-regex "$(orphanExcludeRegex)")
+                      fi
+                      if [ -n "$(fabricFeatureFlags)" ]; then
+                        EXTRA_ARGS+=(--feature-flags "$(fabricFeatureFlags)")
+                      fi
+                      python -u scripts/fabric_deploy.py \
+                        --auth cli \
+                        --environment "$(fabricEnvironment)" \
+                        --repository-directory "$(workspaceDirectory)" \
+                        --parameter-file "$(parameterFile)" \
+                        --item-types "${{ parameters.itemTypesInScope }}" \
+                        "${EXTRA_ARGS[@]}"
+                  env:
+                    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+                - ${{ if eq(parameters.runPostDeployNotebook, true) }}:
+                  - task: AzureCLI@2
+                    displayName: Run post-deployment notebook
+                    condition: and(succeeded(), ne(variables['postDeployNotebookName'], ''))
+                    inputs:
+                      azureSubscription: $(fabricServiceConnection)
+                      scriptType: bash
+                      scriptLocation: inlineScript
+                      workingDirectory: $(artifactRoot)
+                      inlineScript: |
+                        set -euo pipefail
+                        python -u scripts/run_post_deploy_notebook.py \
+                          --auth cli \
+                          --workspace-id "$(fabricDeploy.fabricWorkspaceId)" \
+                          --notebook-name "$(postDeployNotebookName)" \
+                          --parameters '$(postDeployNotebookParameters)' \
+                          --timeout-minutes "$(postDeployNotebookTimeoutMinutes)"

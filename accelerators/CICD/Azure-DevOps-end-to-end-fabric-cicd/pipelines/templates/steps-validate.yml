@@ -1,0 +1,57 @@
+# Static validation of the workspace folder, parameter file and scripts.
+# Used by both the CI (pull request) and CD (build stage) pipelines.
+parameters:
+  - name: repositoryDirectory
+    type: string
+  - name: parameterFile
+    type: string
+  - name: environments
+    type: string
+  - name: itemTypes
+    type: string
+  - name: workingDirectory
+    type: string
+    default: $(System.DefaultWorkingDirectory)
+
+steps:
+  - task: Bash@3
+    displayName: Validate workspace definition
+    inputs:
+      targetType: inline
+      workingDirectory: ${{ parameters.workingDirectory }}
+      script: |
+        set -euo pipefail
+        python -u scripts/validate_repo.py \
+          --repository-directory "${{ parameters.repositoryDirectory }}" \
+          --parameter-file "${{ parameters.parameterFile }}" \
+          --environments "${{ parameters.environments }}" \
+          --item-types "${{ parameters.itemTypes }}" \
+          --report "$(Build.ArtifactStagingDirectory)/validation-report.json"
+
+  - task: Bash@3
+    displayName: Run script unit tests
+    inputs:
+      targetType: inline
+      workingDirectory: ${{ parameters.workingDirectory }}
+      script: |
+        set -euo pipefail
+        python -m pytest scripts/tests \
+          --junitxml "$(Build.ArtifactStagingDirectory)/test-results.xml" \
+          -q
+
+  - task: PublishTestResults@2
+    displayName: Publish unit test results
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: $(Build.ArtifactStagingDirectory)/test-results.xml
+      testRunTitle: Fabric deployment scripts
+      failTaskOnFailedTests: true
+
+  - task: PublishPipelineArtifact@1
+    displayName: Publish validation report
+    condition: succeededOrFailed()
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/validation-report.json
+      artifact: validation-report-$(System.StageName)-$(System.JobAttempt)
+      publishLocation: pipeline

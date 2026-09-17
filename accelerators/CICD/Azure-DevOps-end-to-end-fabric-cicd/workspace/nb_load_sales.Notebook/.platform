@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "nb_load_sales",
+    "description": "Sample notebook used by the CI/CD accelerator"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+  }
+}

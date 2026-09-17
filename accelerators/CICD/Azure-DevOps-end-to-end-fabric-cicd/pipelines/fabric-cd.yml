@@ -1,0 +1,175 @@
+# =============================================================================
+# Fabric CD - build once, promote through Dev -> Test -> Prod
+# -----------------------------------------------------------------------------
+# Triggered by a merge to main. The Build stage validates the repository and
+# publishes the workspace definition as an immutable pipeline artifact. Every
+# deployment stage downloads that same artifact and publishes it to its own
+# Fabric workspace with fabric-cicd, so what reached Prod is provably what was
+# tested in Dev and Test.
+#
+# Gates between stages are Azure DevOps *environments* (fabric-dev, fabric-test,
+# fabric-prod). Add approvals and checks on the environments, not in YAML.
+#
+# Authentication uses an Azure Resource Manager service connection configured
+# with workload identity federation. No client secret is stored anywhere.
+# =============================================================================
+
+name: fabric-cd-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - workspace/**
+      - config/**
+      - pipelines/**
+      - scripts/**
+
+pr: none
+
+parameters:
+  - name: itemTypesInScope
+    displayName: Item types to deploy (comma separated, or "all")
+    type: string
+    default: 'Notebook,DataPipeline,Environment,Lakehouse,Warehouse,SemanticModel,Report,VariableLibrary'
+  - name: unpublishOrphans
+    displayName: Remove items from the workspace that no longer exist in the repository
+    type: boolean
+    default: true
+  - name: runPostDeployNotebook
+    displayName: Run the post-deployment notebook after each stage (if configured)
+    type: boolean
+    default: true
+  - name: deployDev
+    displayName: Deploy to Dev
+    type: boolean
+    default: true
+  - name: deployTest
+    displayName: Deploy to Test
+    type: boolean
+    default: true
+  - name: deployProd
+    displayName: Deploy to Prod
+    type: boolean
+    default: true
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - template: variables/common.yml
+  - name: artifactName
+    value: fabric-workspace   # keep in sync with the artifactName passed to stage-deploy.yml
+
+stages:
+  # ---------------------------------------------------------------------------
+  # Build: validate + package the workspace definition exactly once
+  # ---------------------------------------------------------------------------
+  - stage: Build
+    displayName: Build and validate
+    jobs:
+      - job: build
+        displayName: Validate and package
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - template: templates/steps-setup-python.yml
+            parameters:
+              pythonVersion: ${{ variables.pythonVersion }}
+
+          - template: templates/steps-validate.yml
+            parameters:
+              repositoryDirectory: $(workspaceDirectory)
+              parameterFile: $(parameterFile)
+              environments: $(fabricEnvironments)
+              itemTypes: ${{ parameters.itemTypesInScope }}
+
+          - task: Bash@3
+            displayName: Stamp build metadata
+            inputs:
+              targetType: inline
+              script: |
+                set -euo pipefail
+                mkdir -p "$(Build.ArtifactStagingDirectory)"
+                cat > "$(Build.ArtifactStagingDirectory)/build-info.json" <<JSON
+                {
+                  "buildNumber": "$(Build.BuildNumber)",
+                  "buildId": "$(Build.BuildId)",
+                  "sourceBranch": "$(Build.SourceBranch)",
+                  "sourceVersion": "$(Build.SourceVersion)",
+                  "requestedFor": "$(Build.RequestedFor)",
+                  "repository": "$(Build.Repository.Name)"
+                }
+                JSON
+                cat "$(Build.ArtifactStagingDirectory)/build-info.json"
+
+          - task: CopyFiles@2
+            displayName: Collect deployable files
+            inputs:
+              SourceFolder: $(Build.SourcesDirectory)
+              Contents: |
+                $(workspaceDirectory)/**
+                config/**
+                scripts/**
+                !scripts/tests/**
+                !**/__pycache__/**
+                !**/.pytest_cache/**
+              TargetFolder: $(Build.ArtifactStagingDirectory)
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish workspace artifact
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)
+              artifact: $(artifactName)
+              publishLocation: pipeline
+
+  # ---------------------------------------------------------------------------
+  # Dev
+  # ---------------------------------------------------------------------------
+  - template: templates/stage-deploy.yml
+    parameters:
+      stageName: Deploy_Dev
+      displayName: Deploy to Dev
+      dependsOn: Build
+      condition: and(succeeded(), eq('${{ parameters.deployDev }}', 'True'))
+      adoEnvironment: fabric-dev
+      variableTemplate: variables/dev.yml
+      artifactName: fabric-workspace
+      itemTypesInScope: ${{ parameters.itemTypesInScope }}
+      unpublishOrphans: ${{ parameters.unpublishOrphans }}
+      runPostDeployNotebook: ${{ parameters.runPostDeployNotebook }}
+
+  # ---------------------------------------------------------------------------
+  # Test (add an approval on the fabric-test environment)
+  # ---------------------------------------------------------------------------
+  - template: templates/stage-deploy.yml
+    parameters:
+      stageName: Deploy_Test
+      displayName: Deploy to Test
+      dependsOn: [Build, Deploy_Dev]
+      condition: and(eq(dependencies.Build.result, 'Succeeded'), in(dependencies.Deploy_Dev.result, 'Succeeded', 'Skipped'), eq('${{ parameters.deployTest }}', 'True'))
+      adoEnvironment: fabric-test
+      variableTemplate: variables/test.yml
+      artifactName: fabric-workspace
+      itemTypesInScope: ${{ parameters.itemTypesInScope }}
+      unpublishOrphans: ${{ parameters.unpublishOrphans }}
+      runPostDeployNotebook: ${{ parameters.runPostDeployNotebook }}
+
+  # ---------------------------------------------------------------------------
+  # Prod (add an approval + business-hours check on the fabric-prod environment)
+  # ---------------------------------------------------------------------------
+  - template: templates/stage-deploy.yml
+    parameters:
+      stageName: Deploy_Prod
+      displayName: Deploy to Prod
+      dependsOn: [Build, Deploy_Dev, Deploy_Test]
+      condition: and(eq(dependencies.Build.result, 'Succeeded'), in(dependencies.Deploy_Dev.result, 'Succeeded', 'Skipped'), in(dependencies.Deploy_Test.result, 'Succeeded', 'Skipped'), eq('${{ parameters.deployProd }}', 'True'))
+      adoEnvironment: fabric-prod
+      variableTemplate: variables/prod.yml
+      artifactName: fabric-workspace
+      itemTypesInScope: ${{ parameters.itemTypesInScope }}
+      unpublishOrphans: ${{ parameters.unpublishOrphans }}
+      runPostDeployNotebook: ${{ parameters.runPostDeployNotebook }}

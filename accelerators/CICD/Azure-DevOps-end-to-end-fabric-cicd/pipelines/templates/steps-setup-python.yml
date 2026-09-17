@@ -1,0 +1,29 @@
+# Installs Python and the deployment script dependencies.
+parameters:
+  - name: pythonVersion
+    type: string
+    default: '3.12'
+  - name: requirementsFile
+    type: string
+    default: scripts/requirements.txt
+  - name: workingDirectory
+    type: string
+    default: $(System.DefaultWorkingDirectory)
+
+steps:
+  - task: UsePythonVersion@0
+    displayName: Use Python ${{ parameters.pythonVersion }}
+    inputs:
+      versionSpec: ${{ parameters.pythonVersion }}
+      addToPath: true
+
+  - task: Bash@3
+    displayName: Install Python dependencies
+    inputs:
+      targetType: inline
+      workingDirectory: ${{ parameters.workingDirectory }}
+      script: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        python -m pip install --requirement "${{ parameters.requirementsFile }}"
+        python -m pip list --format=columns | grep -iE "fabric-cicd|azure-identity|requests|pyyaml|pytest" || true

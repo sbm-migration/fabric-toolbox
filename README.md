@@ -19,6 +19,7 @@ These assets should be treated as examples that you can use to create the soluti
 ## Accelerators
 - $${\color{green}NEW!}$$ [pq-adbc-advisor — Power Query ODBC → ADBC migration scanner](./accelerators/pq-adbc-advisor)
 - [BCDR Accelerator](./accelerators/BCDR)
+- $${\color{green}NEW!}$$ [CICD: Azure DevOps end-to-end Fabric CI/CD (fabric-cicd, environments, workload identity federation)](./accelerators/CICD/Azure-DevOps-end-to-end-fabric-cicd)
 - [CICD: Git-Based Deployments](./accelerators/CICD/Git-based-deployments)
 - [CICD: Deploy using Fabric deployment pipelines](./accelerators/CICD/Deploy-using-Fabric-deployment-pipelines)
 - [CICD: Branch out to new workspace](./accelerators/CICD/Branch-out-to-new-workspace)

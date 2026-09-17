@@ -1,0 +1,58 @@
+# =============================================================================
+# Fabric CI - pull request validation
+# -----------------------------------------------------------------------------
+# Runs on every pull request that targets the trunk branch (main). It never
+# touches a Fabric workspace: it only proves that what is about to be merged
+# can be deployed.
+#
+#   1. Static validation of the workspace folder (item folders, .platform files,
+#      duplicate logical ids, unsupported item types).
+#   2. Validation of config/parameter.yml against the environments you promote to.
+#   3. A lightweight secret scan so credentials never land in Git.
+#   4. Unit tests for the deployment scripts.
+#
+# Wire this pipeline up as a *build validation* branch policy on main so a PR
+# cannot complete while it is red.
+# =============================================================================
+
+name: fabric-ci-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none          # PR validation only - CD handles main
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - workspace/**
+      - config/**
+      - pipelines/**
+      - scripts/**
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - template: variables/common.yml
+
+stages:
+  - stage: Validate
+    displayName: Validate Fabric workspace definition
+    jobs:
+      - job: validate
+        displayName: Validate repository
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - template: templates/steps-setup-python.yml
+            parameters:
+              pythonVersion: ${{ variables.pythonVersion }}
+
+          - template: templates/steps-validate.yml
+            parameters:
+              repositoryDirectory: $(workspaceDirectory)
+              parameterFile: $(parameterFile)
+              environments: $(fabricEnvironments)
+              itemTypes: $(itemTypesInScope)

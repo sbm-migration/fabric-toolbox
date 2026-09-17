@@ -1,0 +1,15 @@
+# PROD environment. Referenced by stage-deploy.yml through variableTemplate.
+variables:
+  # Key used in config/parameter.yml replace_value blocks.
+  fabricEnvironment: PROD
+
+  # Target workspace. Set either the name or the id; the id wins when both are set.
+  fabricWorkspaceName: Fabric-CICD-Prod
+  fabricWorkspaceId: ''
+
+  # Optional notebook in the target workspace to run after publishing
+  # (for example to seed data, refresh a semantic model or apply OneLake roles).
+  # Leave the name empty to skip.
+  postDeployNotebookName: ''
+  postDeployNotebookParameters: '{}'
+  postDeployNotebookTimeoutMinutes: 30

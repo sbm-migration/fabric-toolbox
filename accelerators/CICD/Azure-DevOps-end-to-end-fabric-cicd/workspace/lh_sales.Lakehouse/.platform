@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Lakehouse",
+    "displayName": "lh_sales",
+    "description": "Sample lakehouse used by the CI/CD accelerator"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "3f6d0c8e-5c2a-4b1e-9a7d-1f2e3d4c5b6a"
+  }
+}

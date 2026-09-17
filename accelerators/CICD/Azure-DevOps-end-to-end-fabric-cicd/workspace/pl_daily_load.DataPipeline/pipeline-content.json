@@ -1,0 +1,26 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "name": "Run Notebook",
+        "type": "TridentNotebook",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "typeProperties": {
+          "notebookId": "8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+          "workspaceId": "22222222-2222-2222-2222-222222222222",
+          "parameters": {}
+        }
+      }
+    ],
+    "annotations": [],
+    "lastModifiedByObjectId": "00000000-0000-0000-0000-000000000000",
+    "lastPublishTime": "2026-01-01T00:00:00Z"
+  }
+}

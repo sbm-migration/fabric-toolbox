@@ -1,0 +1,7 @@
+# Deployment script dependencies. Pin the fabric-cicd minor version you have
+# tested against; the library evolves quickly.
+fabric-cicd>=1.3,<2
+azure-identity>=1.19
+requests>=2.32
+PyYAML>=6.0
+pytest>=8.0
